@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+
+# env (keep .env.example)
+.env
+.env.local
+.env.*.local
+
+# lock (optional: uncomment to ignore and use package-lock from CI)
+# package-lock.json
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

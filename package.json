@@ -1,0 +1,10 @@
+{
+  "name": "pinwin-agent",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@azuro-org/dictionaries": "^3.0.27",
+    "dotenv": "^17.3.1",
+    "viem": "^2.46.0"
+  }
+}
