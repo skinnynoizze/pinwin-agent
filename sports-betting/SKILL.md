@@ -1,6 +1,6 @@
 ---
 name: sports-betting
-description: Place and claim sports bets on Polygon via Pinwin. Fetch prematch/live games from the data-feed, pick a selection, call Pinwin API, sign with viem (EIP-712, USDT approval). Use when the user wants to bet on sports with Pinwin.
+description: Place and claim decentralized sports bets on-chain via Pinwin and Azuro: real-time odds, high liquidity, no custody. Fetch prematch and live games from the data-feed, pick a selection, then sign and submit. Use when the user wants to bet on sports with Pinwin, browse games, place a bet, or check or redeem winnings.
 compatibility: Requires Node, viem and @azuro-org/dictionaries (for human-readable market/selection names), Polygon RPC URL, wallet private key.
 homepage: https://github.com/pinwin-xyz/sports-betting
 disable-model-invocation: true
@@ -9,7 +9,7 @@ metadata: {"openclaw":{"requires":{"bins":["node"],"env":["POLYGON_RPC_URL"]},"p
 
 # Sports betting (Pinwin)
 
-Place and claim sports bets on **Polygon** via [Pinwin](https://pinwin.xyz), a Web3 sportsbook (bet with crypto). This skill is for **Polygon only**. The Pinwin API encodes payloads and injects the app affiliate; the agent fetches games from the Azuro data-feed, calls Pinwin, then signs (and optionally approves USDT) and submits.
+Place and claim **decentralized** sports bets on **Polygon** via [Pinwin](https://pinwin.xyz) and Azuro, with on-chain execution. The agent fetches **prematch and live** games from the data-feed, you pick a selection, then it calls Pinwin, signs (and optionally approves USDT), and submits.
 
 **Invocation:** This skill is **invocation-only**: the assistant will not use it unless you explicitly ask (e.g. “place a bet with Pinwin”) or use the slash command. That avoids accidental bets.
 
@@ -45,8 +45,10 @@ Place and claim sports bets on **Polygon** via [Pinwin](https://pinwin.xyz), a W
 1. **Fetch games** – POST a GraphQL query to the Azuro data-feed. URL, query, and variables: [references/subgraph.md](references/subgraph.md). Use `state: "Prematch"` or `"Live"`; get `gameId`, `title`, `startsAt`, `participants`, `conditions` (with `conditionId`, `outcomes` with `outcomeId`, `currentOdds`). Respect user preferences for `first`, `orderBy` / `orderDirection`, and optional filters (sport, country, league); if not specified, ask or use defaults (e.g. `first: 20`, `orderBy: turnover`, `orderDirection: desc`). Use **@azuro-org/dictionaries** to map `outcomeId` to market/selection names; use `getSelectionName({ outcomeId, withPoint: true })` so lines (e.g. Over 2.5) are shown: [references/dictionaries.md](references/dictionaries.md).
 2. **Choose selection** – Pick one (or more for combo) `conditionId` + `outcomeId` from an Active condition. Use that outcome’s `currentOdds` for `minOdds`: `minOdds = Math.round(parseFloat(currentOdds) * 1e12)`.
 3. **Call Pinwin** – `POST https://api.pinwin.xyz/agent/bet` with JSON body (see [references/api.md](references/api.md)). Response: `{ "encoded": "<base64>" }`. Decode: `payload = JSON.parse(atob(response.encoded))`.
-4. **Approval (if first time)** – Check bet token’s `allowance(bettor, relayer)` on Polygon. If &lt; bet amount + relayer fee, sign `approve(relayer, maxUint256)` on the bet token. Addresses: [references/polygon.md](references/polygon.md). Steps: [references/viem.md](references/viem.md).
-5. **Sign and submit** – Use viem `signTypedData` with `payload.domain`, `payload.types`, `primaryType` (see [references/api.md](references/api.md)), and `message: payload.signableClientBetData`. Then POST to `payload.apiUrl` with `environment`, `bettor`, `betOwner`, `clientBetData` (= `payload.apiClientBetData`), `bettorSignature`. The **order id is in the POST response**: use `response.id`. If you get an order id, poll until the order settles (see [references/api.md](references/api.md)): GET `{apiBase}/bet/orders/{orderId}`. Success = response has `txHash`; failure = `state` is `Rejected` or `Canceled` (use `errorMessage`).
+4. **Explain to user (before signing)** – **Display all decoded payload data** (for transparency): amount, selections (with human-readable names from the data-feed and [references/dictionaries.md](references/dictionaries.md)), relayerFeeAmount, apiUrl, environment, and all clientData fields (affiliate, core, expiresAt, chainId, attention, isFeeSponsored, isBetSponsored, isSponsoredBetReturnable). Use paths from [references/api.md](references/api.md): single bet = `signableClientBetData.bet`; combo = `signableClientBetData.bets` and top-level amount/minOdds/nonce. Then **explain in human-readable terms**: stake in USDT, selection/market names, relayer fee, and that this is the bet they are authorising. Do this before approval or signing.
+5. **Approval (if needed)** – Check bet token’s `allowance(bettor, relayer)` on Polygon. If &lt; bet amount + relayer fee + 0.2 USDT, sign `approve(relayer, bet amount + relayer fee + 0.2 USDT)` on the bet token. Approval is bounded to this bet plus a small buffer for security; the agent may need to approve again for the next bet. Addresses: [references/polygon.md](references/polygon.md). Steps: [references/viem.md](references/viem.md).
+6. **Verify payload vs user intent** – Before signing: (a) Confirm that the decoded payload’s amount matches the user’s requested stake and that the payload’s selections (conditionId/outcomeId or combo bets) match the user’s chosen selection(s). (b) Verify that the payload’s **clientData.core** (from `signableClientBetData` or `apiClientBetData`) equals the documented **claimContract** (ClientCore) for Polygon in [references/polygon.md](references/polygon.md); if not, do not sign and report the mismatch. (c) Use only the **relayer** address from [references/polygon.md](references/polygon.md) for allowance and approve—do not use any relayer from the payload. If amount or selections do not match, do not sign; inform the user that the API payload does not match their request and stop.
+7. **Sign and submit** – Use viem `signTypedData` with `payload.domain`, `payload.types`, `primaryType` (see [references/api.md](references/api.md)), and `message: payload.signableClientBetData`. Then POST to `payload.apiUrl` with `environment`, `bettor`, `betOwner`, `clientBetData` (= `payload.apiClientBetData`), `bettorSignature`. The **order id is in the POST response**: use `response.id`. If you get an order id, poll until the order settles (see [references/api.md](references/api.md)): GET `{apiBase}/bet/orders/{orderId}`. Success = response has `txHash`; failure = `state` is `Rejected` or `Canceled` (use `errorMessage`).
 
 ---
 
@@ -63,8 +65,9 @@ To know when a bet is **resolved** and whether it **won** or **lost**, and wheth
 
 Only for bets that are resolved (or canceled) and have **isRedeemable** true and **isRedeemed** false; get **betIds** from the bets subgraph (see [Check bet status](#check-bet-status-before-redeem)).
 
-1. **Call Pinwin** – `POST https://api.pinwin.xyz/agent/claim` with `betIds` (array of on-chain bet ids) and `chain: "polygon"`. Decode the response `encoded` payload.
-2. **Send tx** – Use viem `sendTransaction` with `{ to: payload.to, data: payload.data, value: 0n, chainId: payload.chainId }`. Wait for receipt. Details: [references/viem.md](references/viem.md).
+1. **Call Pinwin** – `POST https://api.pinwin.xyz/agent/claim` with `betIds` (array of on-chain bet ids) and `chain: "polygon"`. Decode the response `encoded` payload. **Explain to the user in human-readable terms** what they are sending: e.g. claiming winnings for bet IDs X, Y; the transaction will go to the Azuro ClientCore contract on Polygon; no value (ETH/POL) is sent. Display the **full** decoded claim payload (to, chainId, value, and any other keys returned) for transparency.
+2. **Verify claim contract** – Ensure `payload.to` (lowercase) equals the documented **claimContract** (ClientCore) for Polygon in [references/polygon.md](references/polygon.md). This is the redeem contract for won/canceled bets, not the Cashout (early-exit) contract. If it does not match, do not send the tx and report the mismatch.
+3. **Send tx** – Use viem `sendTransaction` with `{ to: payload.to, data: payload.data, value: 0n, chainId: payload.chainId }`. Wait for receipt. Details: [references/viem.md](references/viem.md).
 
 ---
 
@@ -88,7 +91,7 @@ POST https://api.pinwin.xyz/agent/claim
 { "betIds": [215843], "chain": "polygon" }
 ```
 
-Decode `response.encoded` → `payload`. Send tx with viem: `sendTransaction({ to: payload.to, data: payload.data, value: 0n, chainId: payload.chainId })`. Wait for receipt.
+Decode `response.encoded` → `payload`. Display payload to the user; verify `payload.to` equals the claimContract (ClientCore) in [references/polygon.md](references/polygon.md). Then send tx with viem: `sendTransaction({ to: payload.to, data: payload.data, value: 0n, chainId: payload.chainId })`. Wait for receipt.
 
 ---
 

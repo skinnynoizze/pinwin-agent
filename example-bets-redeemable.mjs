@@ -36,7 +36,7 @@ query RedeemableBets($where: V3_Bet_filter!, $first: Int, $orderBy: V3_Bet_order
 const rl = createInterface({ input: process.stdin, output: process.stdout })
 
 function ask (prompt, envKey) {
-  const env = envKey ? process.env[envKey] : null
+  const env = envKey ? (process.env[envKey] || '').trim() : null
   if (env != null && env !== '') return Promise.resolve(env)
   return new Promise((resolve) => {
     rl.question(prompt, (answer) => resolve((answer || '').trim()))

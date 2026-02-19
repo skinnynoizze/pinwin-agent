@@ -3,20 +3,28 @@
  * Full flow for the sports-betting skill.
  *
  * Usage:
+ *   node example-place-bet.mjs [amount]
+ *   node example-place-bet.mjs <amount> <conditionId> <outcomeId> <minOdds>
+ *
+ * Two modes:
+ * 1. No args or only amount: you are prompted for amount (if omitted), then the picker
+ *    lists selectable outcomes; you enter an index (0–19) or conditionId,outcomeId.
+ *    minOdds come from the subgraph.
+ * 2. All four args: amount, conditionId, outcomeId, minOdds. Picker is skipped; values
+ *    are used as given (e.g. for scripting).
+ *
+ * Examples:
  *   node example-place-bet.mjs
+ *   node example-place-bet.mjs 1000000
+ *   node example-place-bet.mjs 1000000 300610060000000000806378760000000000001639741906 21 12590000000000
  *
- * You can set env vars to skip prompts:
- *   POLYGON_RPC_URL, BETTOR_PRIVATE_KEY, BET_AMOUNT
- * Or pass selection via CONDITION_ID and OUTCOME_ID (and optional MIN_ODDS).
- *
- * Otherwise the script will prompt for RPC URL, private key, amount, then list games
- * and ask you to pick a game index and selection index.
+ * Env (optional): POLYGON_RPC_URL, BETTOR_PRIVATE_KEY.
  * Loads .env from the current working directory if present (via dotenv).
  */
 
 import 'dotenv/config'
 import { createInterface } from 'readline'
-import { createPublicClient, createWalletClient, http, parseAbi, encodeFunctionData, maxUint256 } from 'viem'
+import { createPublicClient, createWalletClient, http, parseAbi, encodeFunctionData } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { polygon } from 'viem/chains'
 import { getMarketName, getSelectionName } from '@azuro-org/dictionaries'
@@ -26,6 +34,8 @@ const DATA_FEED_URL = 'https://thegraph-1.onchainfeed.org/subgraphs/name/azuro-p
 const PINWIN_BET_URL = 'https://api.pinwin.xyz/agent/bet'
 const RELAYER = '0x8dA05c0021e6b35865FDC959c54dCeF3A4AbBa9d'
 const BET_TOKEN = '0xc2132d05d31c914a87c6611c10748aeb04b58e8f'
+/** 0.2 USDT buffer for bounded approval (6 decimals) */
+const APPROVAL_BUFFER = 200000n
 
 const GAMES_QUERY = `
 query Games($first: Int!, $where: Game_filter!, $orderBy: Game_orderBy!, $orderDirection: OrderDirection!) {
@@ -173,42 +183,55 @@ async function main () {
     process.exit(1)
   }
 
-  const amountStr = await ask('Bet amount (USDT smallest units, 6 decimals; e.g. 1000000 = 1 USDT, or set BET_AMOUNT): ', 'BET_AMOUNT')
-  const amount = amountStr ? BigInt(amountStr) : 0n
-  if (amount <= 0n) {
-    console.error('Amount must be positive.')
-    rl.close()
-    process.exit(1)
-  }
+  const amountArg = process.argv[2]?.trim()
+  const conditionIdArg = process.argv[3]?.trim()
+  const outcomeIdArg = process.argv[4]?.trim()
+  const minOddsArg = process.argv[5]?.trim()
 
-  console.log('\nFetching Prematch games from Azuro data-feed...')
-  const games = await fetchGames('Prematch', 15)
-  if (!games.length) {
-    console.error('No games returned.')
-    rl.close()
-    process.exit(1)
-  }
+  const hasAllArgs = amountArg && conditionIdArg && outcomeIdArg && minOddsArg
 
-  const selections = listGamesAndSelections(games)
-  if (!selections.length) {
-    console.error('No Active conditions/outcomes in fetched games.')
-    rl.close()
-    process.exit(1)
-  }
-
+  let amount
   let selection
-  const conditionIdEnv = process.env.CONDITION_ID
-  const outcomeIdEnv = process.env.OUTCOME_ID
-  if (conditionIdEnv && outcomeIdEnv) {
-    const outcomeId = parseInt(outcomeIdEnv, 10)
-    selection = selections.find((s) => s.conditionId === conditionIdEnv && s.outcomeId === outcomeId)
-    if (!selection) {
-      const minOddsEnv = process.env.MIN_ODDS || '1.5'
-      selection = { conditionId: conditionIdEnv, outcomeId, currentOdds: minOddsEnv }
-    }
-  }
 
-  if (!selection) {
+  if (hasAllArgs) {
+    amount = BigInt(amountArg)
+    if (amount <= 0n) {
+      console.error('Amount must be positive.')
+      rl.close()
+      process.exit(1)
+    }
+    const outcomeId = parseInt(outcomeIdArg, 10)
+    if (Number.isNaN(outcomeId)) {
+      console.error('outcomeId must be a number.')
+      rl.close()
+      process.exit(1)
+    }
+    selection = { conditionId: conditionIdArg, outcomeId, currentOdds: minOddsArg }
+  } else {
+    let amountStr = amountArg || null
+    if (!amountStr) amountStr = await ask('Bet amount (USDT smallest units, 6 decimals; e.g. 1000000 = 1 USDT): ', null)
+    amount = amountStr ? BigInt(amountStr) : 0n
+    if (amount <= 0n) {
+      console.error('Amount must be positive.')
+      rl.close()
+      process.exit(1)
+    }
+
+    console.log('\nFetching Prematch games from Azuro data-feed...')
+    const games = await fetchGames('Prematch', 15)
+    if (!games.length) {
+      console.error('No games returned.')
+      rl.close()
+      process.exit(1)
+    }
+
+    const selections = listGamesAndSelections(games)
+    if (!selections.length) {
+      console.error('No Active conditions/outcomes in fetched games.')
+      rl.close()
+      process.exit(1)
+    }
+
     console.log('\nFirst 20 selectable outcomes (game | market | selection | odds):')
     selections.slice(0, 20).forEach((s, i) => {
       console.log(`  [${i}] ${s.title?.slice(0, 40)} | ${s.marketName} | ${s.selectionName} | ${s.currentOdds}`)
@@ -216,7 +239,13 @@ async function main () {
     const idxStr = await ask('\nEnter selection index (0–19) or conditionId,outcomeId: ')
     if (idxStr.includes(',')) {
       const [cid, oid] = idxStr.split(',').map((x) => x.trim())
-      selection = { conditionId: cid, outcomeId: parseInt(oid, 10), currentOdds: '1.5' }
+      const oidNum = parseInt(oid, 10)
+      selection = selections.find((s) => String(s.conditionId) === String(cid) && s.outcomeId === oidNum)
+      if (!selection) {
+        console.error('That conditionId,outcomeId is not in the list. Pick an index from the list above.')
+        rl.close()
+        process.exit(1)
+      }
     } else {
       const idx = parseInt(idxStr, 10)
       if (Number.isNaN(idx) || idx < 0 || idx >= selections.length) {
@@ -257,6 +286,7 @@ async function main () {
   }
 
   const payload = JSON.parse(Buffer.from(pinwinBody.encoded, 'base64').toString('utf8'))
+  console.log('Decoded bet payload (full):', JSON.stringify(payload, null, 2))
   const account = privateKeyToAccount(privateKey)
 
   const publicClient = createPublicClient({ chain: polygon, transport: http(rpcUrl) })
@@ -267,7 +297,7 @@ async function main () {
   })
 
   const relayerFeeAmount = getRelayerFeeAmount(payload)
-  const requiredAllowance = amount + relayerFeeAmount
+  const requiredAllowance = amount + relayerFeeAmount + APPROVAL_BUFFER
   const currentAllowance = await publicClient.readContract({
     address: BET_TOKEN,
     abi: erc20Abi,
@@ -276,11 +306,11 @@ async function main () {
   })
 
   if (currentAllowance < requiredAllowance) {
-    console.log('\nAllowance insufficient; sending approve(relayer, maxUint256)...')
+    console.log('\nAllowance insufficient; sending approve(relayer, stake + relayerFee + 0.2 USDT buffer)...')
     const approveData = encodeFunctionData({
       abi: erc20Abi,
       functionName: 'approve',
-      args: [RELAYER, maxUint256],
+      args: [RELAYER, amount + relayerFeeAmount + APPROVAL_BUFFER],
     })
     const hash = await walletClient.sendTransaction({
       to: BET_TOKEN,

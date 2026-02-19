@@ -1,16 +1,21 @@
 /**
  * Example: Claim redeemable bet payouts via Pinwin /agent/claim and viem sendTransaction.
- * Get betIds from example-bets-redeemable.mjs, then run this with BET_IDS (or prompt).
+ * Get betIds from example-bets-redeemable.mjs, then run with one or more bet IDs.
  *
  * Usage:
- *   node example-claim.mjs
+ *   node example-claim.mjs <betId> [betId ...]
+ *   node example-claim.mjs <betId>,<betId>,...
+ *
+ * Examples:
+ *   node example-claim.mjs 215843
+ *   node example-claim.mjs 215843 211524
+ *   node example-claim.mjs 215843,211524
  *
  * Env (optional):
  *   POLYGON_RPC_URL     – Polygon RPC URL
  *   BETTOR_PRIVATE_KEY – Wallet private key (hex, with or without 0x)
- *   BET_IDS     – Comma-separated bet ids to claim (e.g. "215843" or "215843,211524")
  *
- * If env is not set, the script will prompt for RPC URL, private key, and betIds.
+ * If bet IDs are not passed as args, the script will prompt for them.
  * Loads .env from the current working directory if present (via dotenv).
  */
 
@@ -21,11 +26,13 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { polygon } from 'viem/chains'
 
 const PINWIN_CLAIM_URL = 'https://api.pinwin.xyz/agent/claim'
+/** Azuro ClientCore on Polygon (redeem won/canceled bets). Must match payload.to. */
+const CLAIM_CONTRACT = '0xF9548Be470A4e130c90ceA8b179FCD66D2972AC7'
 
 const rl = createInterface({ input: process.stdin, output: process.stdout })
 
 function ask (prompt, envKey, sensitive = false) {
-  const env = envKey ? process.env[envKey] : null
+  const env = envKey ? (process.env[envKey] || '').trim() : null
   if (env != null && env !== '') {
     if (sensitive) console.log(prompt + ' [from ' + envKey + ']')
     return Promise.resolve(env)
@@ -38,6 +45,12 @@ function ask (prompt, envKey, sensitive = false) {
 function parseBetIds (input) {
   if (!input) return []
   return input.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => !Number.isNaN(n))
+}
+
+function betIdsFromArgs () {
+  const args = process.argv.slice(2)
+  if (args.length === 0) return null
+  return parseBetIds(args.join(','))
 }
 
 async function main () {
@@ -58,8 +71,11 @@ async function main () {
     process.exit(1)
   }
 
-  const betIdsInput = await ask('Bet IDs to claim, comma-separated (or set BET_IDS): ', 'BET_IDS')
-  const betIds = parseBetIds(betIdsInput)
+  let betIds = betIdsFromArgs()
+  if (!betIds || betIds.length === 0) {
+    const betIdsInput = await ask('Bet IDs to claim, comma-separated: ', null)
+    betIds = parseBetIds(betIdsInput)
+  }
   if (betIds.length === 0) {
     console.error('At least one bet ID required. Get redeemable betIds from example-bets-redeemable.mjs.')
     rl.close()
@@ -87,7 +103,14 @@ async function main () {
   }
 
   const payload = JSON.parse(Buffer.from(claimBody.encoded, 'base64').toString('utf8'))
-  console.log('Decoded payload:', { to: payload.to, chainId: payload.chainId, value: payload.value, dataLength: payload.data?.length })
+  console.log('Decoded claim payload (full):', JSON.stringify(payload, null, 2))
+
+  const toLower = (payload.to || '').toLowerCase()
+  if (toLower !== CLAIM_CONTRACT.toLowerCase()) {
+    console.error('Claim contract mismatch: payload.to', payload.to, '!= expected ClientCore', CLAIM_CONTRACT)
+    rl.close()
+    process.exit(1)
+  }
 
   const account = privateKeyToAccount(privateKey)
   const publicClient = createPublicClient({ chain: polygon, transport: http(rpcUrl) })
