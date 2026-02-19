@@ -1,10 +1,10 @@
 ---
 name: sports-betting
 description: Place and claim decentralized sports bets on-chain via Pinwin and Azuro: real-time odds, high liquidity, no custody. Fetch prematch and live games from the data-feed, pick a selection, then sign and submit. Use when the user wants to bet on sports with Pinwin, browse games, place a bet, or check or redeem winnings.
-compatibility: Requires Node, viem and @azuro-org/dictionaries (for human-readable market/selection names), Polygon RPC URL, wallet private key.
-homepage: https://github.com/pinwin-xyz/sports-betting
+compatibility: Requires Node, viem and @azuro-org/dictionaries (for human-readable market/selection names). Required env: BETTOR_PRIVATE_KEY (wallet private key; high-sensitivity). Optional env: POLYGON_RPC_URL (Polygon RPC); if unset, use default RPC(s) in references/polygon.md.
+homepage: https://github.com/skinnynoizze/pinwin-agent
 disable-model-invocation: true
-metadata: {"openclaw":{"requires":{"bins":["node"],"env":["POLYGON_RPC_URL"]},"primaryEnv":"BETTOR_PRIVATE_KEY"}}
+metadata: {"openclaw":{"requires":{"bins":["node"],"env":["BETTOR_PRIVATE_KEY"]},"primaryEnv":"BETTOR_PRIVATE_KEY"}}
 ---
 
 # Sports betting (Pinwin)
@@ -31,8 +31,16 @@ Place and claim **decentralized** sports bets on **Polygon** via [Pinwin](https:
 
 ## Prerequisites
 
-- **Polygon RPC URL** (e.g. public RPC or Alchemy/Infura).
-- **Wallet private key** (from user, env var, or file).
+### Credentials (required env)
+
+- **BETTOR_PRIVATE_KEY** — Wallet private key (hex) for signing bets and claim transactions. High-sensitivity; do not log or expose. Required for placing and claiming. Use a dedicated betting wallet with minimal funds; do not use your primary wallet.
+
+### Optional
+
+- **POLYGON_RPC_URL** — Polygon RPC endpoint. If unset, the agent uses the default RPC(s) in [references/polygon.md](references/polygon.md) (e.g. Pocket Network, PublicNode).
+
+### Other
+
 - **@azuro-org/dictionaries** — required. The subgraph returns only `outcomeId` and odds; this package is the only way to map them to human-readable market and selection names (e.g. "Total Goals", "Over (2.5)"). See [references/dictionaries.md](references/dictionaries.md).
 - **Addresses:** relayer, bet token, native gas token (POL), data-feed URL, and bets subgraph URL are in [references/polygon.md](references/polygon.md).
 - **Balances:** The agent can use viem to check **POL** (gas) and **USDT** (stake + relayer fee) before placing a bet; if insufficient, inform the user and do not proceed. See [references/viem.md](references/viem.md).

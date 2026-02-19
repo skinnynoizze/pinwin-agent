@@ -2,6 +2,10 @@
 
 Chain ID **137**. Polygon production.
 
+**RPC (defaults):** If `POLYGON_RPC_URL` is not set, use one of these — try in order if the first fails:
+- `https://poly.api.pocket.network`
+- `https://polygon-bor-rpc.publicnode.com` ([PublicNode](https://polygon-bor-rpc.publicnode.com))
+
 | Field | Value |
 |-------|--------|
 | **native gas token** | POL (for gas: approve, claim txs) |

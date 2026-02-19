@@ -1,7 +1,7 @@
 # Viem (minimal)
 
 **Install:** `npm install viem`.  
-**Setup:** Create `publicClient` and `walletClient` from private key + `http(POLYGON_RPC_URL)` + chain `polygon` (from `viem/chains`). Use `privateKeyToAccount` from `viem/accounts`.
+**Setup:** RPC = `process.env.POLYGON_RPC_URL` or first default from [references/polygon.md](references/polygon.md). Create `publicClient` and `walletClient` from private key + `http(rpcUrl)` + chain `polygon` (from `viem/chains`). Use `privateKeyToAccount` from `viem/accounts`.
 
 - **Balance (POL):** `publicClient.getBalance({ address })` — native gas token on Polygon; use to ensure the wallet can pay for approve and claim txs.
 - **Balance (USDT):** `publicClient.readContract({ address: betToken, abi: erc20Abi, functionName: 'balanceOf', args: [bettor] })`. Bet token and 6 decimals from [references/polygon.md](references/polygon.md). Require balance ≥ stake + relayerFeeAmount (from payload) before placing a bet.
